@@ -1,0 +1,57 @@
+#!/usr/bin/env escript
+%% -*- erlang -*-
+%% EWP LICENSE GENERATOR.
+
+
+main([KeyFile, HWID]) ->
+	main([KeyFile, HWID, undefined]);
+main([KeyFile, HWID, Password]) ->
+    try
+    	case length(HWID) of
+    		32 ->
+		    	Key = get_private_key(KeyFile, Password),
+		    	Signature = public_key:encrypt_private(list_to_binary(HWID), Key, [{rsa_pad, rsa_pkcs1_padding}]),
+		    	License = base64:encode(Signature),
+		    	BeginStr = <<"-----BEGIN EWP LICENSE-----">>,
+		    	HWIDinfo = ["\n-HWID: ", HWID, "\n\n"],
+		    	EndStr = <<"-----END EWP LICENSE-----">>,
+		    	ok = file:write_file("license", [BeginStr, HWIDinfo, License, "\n", EndStr]);
+		    _ ->
+		    	io:format(" **The HWID is invalid.~n"),
+		    	throw(ehwid)
+		end,
+		io:format("A license file is generated in current dir named 'license'.~n")
+    catch
+        _:_ ->
+        	io:format(" **failed to generate the license file.~n"),
+            usage()
+    end;
+main(_) ->
+    usage().
+
+usage() ->
+    io:format("Usage: ewp-license KEYFILE HWID [PASSWD]\n"),
+    halt(1).
+
+get_private_key(KeyFile, Password) ->
+	try
+	    case file:read_file(KeyFile) of
+	    	{ok, Content} ->
+			    case public_key:pem_decode(Content) of
+			        [KeyInfo = {_, _, not_encrypted}] ->
+			            public_key:pem_entry_decode(KeyInfo);
+			        [KeyInfo] ->
+			            case Password of
+			                undefined ->
+					    		io:format(" **need a password.~n");
+			                _ ->
+			                	public_key:pem_entry_decode(KeyInfo, Password)
+			            end
+			    end;
+			_ ->
+				io:format(" **failed to read the key file:~p.~n", [KeyFile])
+		end
+	catch
+		_:_ ->
+			io:format(" **failed to get the private key.~n")
+	end.
